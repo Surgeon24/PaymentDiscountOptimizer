@@ -58,13 +58,13 @@ public class PaymentOptimizerServiceTest {
 
     @Test
     void testCardWithoutPromoNoDiscount() {
-        var orders = List.of(new Order("ORDER1", new BigDecimal("100.00"), List.of("CARD2"))); // CARD1 не в промо
+        var orders = List.of(new Order("ORDER1", new BigDecimal("100.00"), List.of("CARD2")));
         var methods = List.of(
                 new PaymentMethod("CARD1", 10, new BigDecimal("200.00"))
         );
 
         var result = asMap(service.optimize(orders, methods));
-        assertEquals(new BigDecimal("100.00"), result.get("CARD1")); // без скидки
+        assertEquals(new BigDecimal("100.00"), result.get("CARD1"));
     }
 
     @Test
@@ -89,14 +89,16 @@ public class PaymentOptimizerServiceTest {
         );
 
         var result = asMap(service.optimize(orders, methods));
-        assertEquals(new BigDecimal("90.00"), result.get("PUNKTY")); // при равной скидке — баллы в приоритете
+        assertEquals(new BigDecimal("90.00"), result.get("PUNKTY"));
     }
 
+    //Since there was a bug in the partial payment method by points,
+    // a parametric test was added to check this option more closely
     @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.CsvSource({
-            "100.00, 20.00, 15, 0, 90.00, 20.00, 70.00", // скидка 10%, 20 баллов, 70 картой
-            "100.00, 50.00, 15, 0, 90.00, 50.00, 40.00", // больше баллов — больше сэкономили на карте
-            "100.00, 9.99, 15, 0, 100.00, 0.00, 100.00"  // баллов < 10% — скидка не применяется
+            "100.00, 20.00, 15, 0, 90.00, 20.00, 70.00",
+            "100.00, 50.00, 15, 0, 90.00, 50.00, 40.00",
+            "100.00, 9.99, 15, 0, 100.00, 0.00, 100.00"
     })
     void testPartialPointsUseMaximum(String orderVal, String pointsAvailable, int pointsDiscount, int cardDiscount,
                                      String expectedTotal, String expectedPoints, String expectedCard) {

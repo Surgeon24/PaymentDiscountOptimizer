@@ -12,8 +12,64 @@ public class PaymentOptimizerService {
 
     private static final String LOYALTY_ID = "PUNKTY";
     private static final int LOYALTY_PERCENT = 10;
+    private static class Option {
+        String methodId;
+        BigDecimal cost;
+        BigDecimal fromLoyalty;
+        BigDecimal fromCard;
+    }
 
     public List<PaymentResult> optimize(List<Order> orders, List<PaymentMethod> methods) {
+        List<List<PaymentResult>> allResults = new ArrayList<>();
+        Random random = new Random();
+        // if there are few orders - an attempt to sort through all options for a guaranteed best price
+        if (orders.size() <= 8) {
+            int maxPermutations = 1000;
+            Set<List<Order>> triedPermutations = new HashSet<>();
+            while (triedPermutations.size() < maxPermutations &&
+                    triedPermutations.size() < factorial(orders.size())) {
+                List<Order> permutation = new ArrayList<>(orders);
+                Collections.shuffle(permutation, random);
+
+                if (triedPermutations.add(permutation)) {
+                    allResults.add(tryStrategy(permutation, methods));
+                }
+            }
+        }
+        // if there are many orders, check individual cases
+        else {
+            // 1. original order
+            allResults.add(tryStrategy(orders, methods));
+
+            // 2. sort by price descending
+            orders.sort(Comparator.comparing(Order::getValue).reversed());
+            allResults.add(tryStrategy(orders, methods));
+
+            // 3. sort by price ascending
+            Collections.reverse(orders);
+            allResults.add(tryStrategy(orders, methods));
+
+            // 4. 5 random orders to eliminate edge cases
+            for (int i = 0; i < 5; i++) {
+                Collections.shuffle(orders, random);
+                allResults.add(tryStrategy(orders, methods));
+            }
+        }
+
+        // find the best result
+        return allResults.stream()
+                .filter(Objects::nonNull)
+                .min(Comparator.comparing(this::calculateTotalCost))
+                .orElseThrow(() -> new RuntimeException("Failed to pay for all orders"));
+    }
+
+    private BigDecimal calculateTotalCost(List<PaymentResult> results) {
+        return results.stream()
+                .map(PaymentResult::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private List<PaymentResult> tryStrategy(List<Order> orders, List<PaymentMethod> methods) {
         Map<String, BigDecimal> spentPerMethod = new HashMap<>();
         Map<String, PaymentMethod> methodMap = new HashMap<>();
 
@@ -22,37 +78,33 @@ public class PaymentOptimizerService {
             methodMap.put(method.getId(), new PaymentMethod(method.getId(), method.getDiscount(), method.getLimit()));
             spentPerMethod.put(method.getId(), BigDecimal.ZERO);
         }
-
-        // process each order
-        for (Order order : orders) {
-            processOrder(order, methodMap, spentPerMethod);
-        }
-
-        // final result
-        List<PaymentResult> results = new ArrayList<>();
-        for (Map.Entry<String, BigDecimal> entry : spentPerMethod.entrySet()) {
-            if (entry.getValue().compareTo(BigDecimal.ZERO) > 0) {
-                results.add(new PaymentResult(entry.getKey(), entry.getValue().setScale(2, RoundingMode.HALF_UP)));
+        try {
+            // process each order
+            for (Order order : orders) {
+                if (!processOrder(order, methodMap, spentPerMethod)) {
+                    return null;
+                }
             }
-        }
 
-        return results;
+            // final result
+            List<PaymentResult> results = new ArrayList<>();
+            for (Map.Entry<String, BigDecimal> entry : spentPerMethod.entrySet()) {
+                if (entry.getValue().compareTo(BigDecimal.ZERO) > 0) {
+                    results.add(new PaymentResult(entry.getKey(), entry.getValue().setScale(2, RoundingMode.HALF_UP)));
+                }
+            }
+
+            return results;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
-    private void processOrder(Order order, Map<String, PaymentMethod> methodMap, Map<String, BigDecimal> spent) {
+    private boolean processOrder(Order order, Map<String, PaymentMethod> methodMap, Map<String, BigDecimal> spent) {
         BigDecimal orderValue = order.getValue();
         List<String> promos = order.getPromotions() != null ? order.getPromotions() : new ArrayList<>();
 
-        // options: payment method, discount, sum after discount, terms of usage
-        class Option {
-            String methodId;
-            BigDecimal cost;
-            BigDecimal fromLoyalty;
-            BigDecimal fromCard;
-        }
-
         List<Option> options = new ArrayList<>();
-        System.out.println("order id: " + order.getId());
         // 1. By loyalty points
         PaymentMethod points = methodMap.get(LOYALTY_ID);
         if (points != null && points.getLimit().compareTo(orderValue) >= 0) {
@@ -70,7 +122,7 @@ public class PaymentOptimizerService {
             BigDecimal tenPercent = orderValue.multiply(BigDecimal.valueOf(0.1)).setScale(2, RoundingMode.HALF_UP);
             if (points.getLimit().compareTo(tenPercent) >= 0) {
                 BigDecimal discounted = applyDiscount(orderValue, LOYALTY_PERCENT);
-                BigDecimal maxPointsUsable = discounted.min(points.getLimit()); // максимально возможная доля баллами (≠ 10%)
+                BigDecimal maxPointsUsable = discounted.min(points.getLimit());
 
                 for (PaymentMethod card : methodMap.values()) {
                     if (!card.getId().equals(LOYALTY_ID)) {
@@ -114,14 +166,15 @@ public class PaymentOptimizerService {
             }
         }
 
+        if (options.isEmpty()) {
+            return false;
+        }
         // Choose best option
-        options.sort(Comparator.comparing(o -> o.cost));
+        options.sort(Comparator
+                .comparing((Option o) -> o.cost)
+                .thenComparing(o -> o.fromCard)
+        );
         Option best = options.get(0);
-        //print all options to analise the logic
-//        for (Option option : options){
-//            System.out.println("option 1: " + option.methodId);
-//            System.out.println(option.cost + "\t" + option.fromCard + "\t" + option.fromLoyalty);
-//        }
 
         // update status of cards
         if (best.fromLoyalty.compareTo(BigDecimal.ZERO) > 0) {
@@ -136,10 +189,17 @@ public class PaymentOptimizerService {
             c.setLimit(c.getLimit().subtract(best.fromCard));
             spent.merge(cardId, best.fromCard, BigDecimal::add);
         }
+        return true;
     }
 
     private BigDecimal applyDiscount(BigDecimal value, int percent) {
         return value.multiply(BigDecimal.valueOf(100 - percent))
                 .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
     }
+
+    private long factorial(int n) {
+        if (n <= 1) return 1;
+        return n * factorial(n - 1);
+    }
 }
+

@@ -18,5 +18,4 @@ public class PaymentResult {
     public BigDecimal getAmount() {
         return this.amount;
     }
-    // TODO: toString()
 }
