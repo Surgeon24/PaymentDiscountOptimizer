@@ -11,5 +11,12 @@ public class PaymentResult {
         this.amount = amount;
     }
 
-    // TODO: getters and toString()
+    public String getMethodId() {
+        return this.methodId;
+    }
+
+    public BigDecimal getAmount() {
+        return this.amount;
+    }
+    // TODO: toString()
 }
