@@ -1,4 +1,6 @@
-# Payment Promotion Optimizer
+# Mikhail_Ermolaev_Java_Krakow
+
+## Payment Promotion Optimizer
 
 Java 21 console application that selects the optimal payment method for each order to maximize the total discount. Supports loyalty points, bank discounts, and complex decision logic.
 
