@@ -1,9 +1,17 @@
 plugins {
 	id 'java'
+	id 'com.github.johnrengelman.shadow' version '8.1.1'
+}
+
+shadowJar {
+	archiveClassifier.set('all')
+	manifest {
+		attributes 'Main-Class': 'm.ermolaev.discounts.DiscountsApplication'
+	}
 }
 
 group = 'm.ermolaev'
-version = '0.0.2-SNAPSHOT'
+version = '0.1.0'
 
 java {
 	toolchain {
