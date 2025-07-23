@@ -2,6 +2,9 @@
 ### Description
 This project implements a payment optimization algorithm for an online supermarket that supports both traditional payment methods (e.g., credit cards, bank transfers) and loyalty points.
 
+<img src="/logo.png" alt="logo" style="width: 50%; height: auto;">
+
+
 ### 💳 Payment Rules <br>
 Customers can pay for each order using:
 
